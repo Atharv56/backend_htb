@@ -8,7 +8,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode  # kept if you add tools later
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-
+from queryGraph import build_reasoning_path_for_query
 # ---------- Types ----------
 
 class EventExtractionState(TypedDict):
@@ -26,7 +26,7 @@ class EventExtractionState(TypedDict):
 
 # ---------- LLM Client ----------
 
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")  # set this in your environment
+# GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")  # set this in your environment
 # if not GOOGLE_API_KEY:
 #     # Fail fast with a clear message if key is missing
 #     raise RuntimeError("Missing GOOGLE_API_KEY environment variable.")
@@ -46,32 +46,40 @@ def extract_intent_node(state: EventExtractionState) -> EventExtractionState:
 
     system_prompt = """You are an expert event coordinator specializing in matching events to appropriate venues.
 
-Your task is to analyze an event booking query and extract ONLY information relevant to the venue side.
+    Your task is to analyze an event booking query and extract ONLY information relevant to the **venue side**.
 
-Return JSON in this exact format:
-{
-  "organizer": "string",
-  "event_type": "string",
-  "attendees": number,
-  "requirements": ["..."],
-  "constraints": ["..."]
-}
+    Return JSON in this exact format:
+    {
+    "organizer": "string",
+    "event_type": "string",
+    "attendees": number,
+    "requirements": ["..."],   // only venue-related requirements
+    "constraints": ["..."]     // conditions that affect venue suitability
+    }
 
-Clarifications:
-- Focus only on what the venue must provide or accommodate — not what the organizer brings.
-- Exclude non-venue requirements such as snacks, judges, prizes, or staff.
-- Include elements like: space type, equipment/facilities (lighting, power, Wi-Fi, seating, mats, projectors, sound), environment (quiet, ventilation, acoustics), safety, accessibility, comfort.
-- Always include accessibility and safety considerations.
+    Clarifications:
+    - Focus **only** on what the *venue must provide* or *accommodate* — not what the organizer brings.
+    - Exclude non-venue requirements such as snacks, judges, prizes, or staff.
+    - Include elements like:
+    - space type (stage, hall, classroom, gym, outdoor area)
+    - equipment/facilities (lighting, power, Wi-Fi, seating, mats, projectors, sound system)
+    - environment (quiet, ventilation, acoustics, weather protection)
+    - safety, accessibility, and comfort.
+    - ENSURE THAT THE REQUIREMENTS ARE LOWERCASED AND BELONG TO THE SET ('microphones', 'conference table', 'wi-fi', 'tables', 'chairs', 'power outlets', 'catering area', 'conference phone', 'goal posts', 'floodlights', 'goals', 'stage area', 'lighting', 'security', 'rotary evaporators', 'spectrophotometer', 'incubators', 'microscopes', 'autoclave', 'laminar flow hood', 'balances', 'ph meters', 'magnetic stirrers', 'stage', 'sound system', 'catering facilities', 'sprung floor', 'barres', 'easels', 'pottery wheels', 'kiln', 'ventilation system', 'starting blocks', 'lane ropes', 'shallow water', 'warm water', 'av/projector', 'accessibility', 'audio-visual facilities', 'induction loop', 'fume hoods', 'eye wash stations', 'chemical storage', 'gas taps', 'distilled water', 'large fume hood', 'projector', 'whiteboard', 'demonstration bench', 'pa system', 'chemical storage cabinets', 'fume hood', 'balance', 'nitrogen gas', 'spectrometer', 'chromatograph', 'computer workstations', 'badminton nets', 'basketball hoops', 'volleyball nets', 'scoreboard', 'changing rooms', 'mats', 'mirrors', 'training equipment', 'first aid kit', 'showers', 'lockers', 'toilets', 'benches', 'desks', 'podium, 'air conditioning', 'projector screen', 'monitor', 'seating area', 'sinks', 'safety signs', 'ventilation', 'lifeguard chair', 'water filtration system', 'decorative plants').
+    - IF THE REQUIREMENTS DO NOT BELONG TO THE ABOVE SET, ADD THE MOST RELEVANT ONES FROM THE SET ELSE 'NOT PRESENT'
+    
+    Guidelines by event type:
+    - Tech events: power outlets, Wi-Fi, tables, seating, projectors, whiteboards, overnight access, ventilation, accessibility, safety.
+    - Drama rehearsals: stage, lighting, prop storage, soundproofing, acoustics, seating, accessibility, safety.
+    - Physical activities (e.g., Karate): open space, mats, ventilation, safety gear storage, first aid, water access.
+    - Lectures: seating, projector, screen, microphone, lighting, acoustics, accessibility.
+    - Exhibitions: display stands, lighting, open area, accessibility, weather protection, security.
+    - Food events: kitchen access, ventilation, hygiene, tables, accessibility, safety.
+    - Outdoor events: open area, weather protection, restrooms, accessibility, safety.
 
-Guidelines by event type:
-- Tech: power outlets, Wi-Fi, tables, seating, projectors, whiteboards, overnight access, ventilation, accessibility, safety.
-- Drama: stage, lighting, prop storage, soundproofing, acoustics, seating, accessibility, safety.
-- Physical (Karate): open space, mats, ventilation, safety gear storage, first aid, water access.
-- Lectures: seating, projector, screen, microphone, lighting, acoustics, accessibility.
-- Exhibitions: display stands, lighting, open area, accessibility, weather protection, security.
-- Food: kitchen access, ventilation, hygiene, tables, accessibility, safety.
-- Outdoor: open area, weather protection, restrooms, accessibility, safety.
-"""
+    IF YOU ARE UNSURE ABOUT ANY FIELD, JUST GENERALIZE IT AND ADD RELEVANT AMINITIES FROM THE ABOVE SET.
+    Always include accessibility and safety considerations.
+    """
 
     try:
         response = llm.invoke([
@@ -247,21 +255,25 @@ def extract():
         result = extract_event_intent(query, use_enrichment=use_enrichment)
         print(result)
         # Always return JSON
-        return jsonify({
-            "success": result.get("error") is None,
-            "data": {
-                "query": result.get("query"),
-                "organizer": result.get("organizer"),
-                "event_type": result.get("event_type"),
-                "attendees": result.get("attendees"),
-                "requirements": result.get("requirements", []),
-                "constraints": result.get("constraints", []),
-                "enriched_constraints": result.get("enriched_constraints", [])
-            },
-            "error": result.get("error"),
-            # For debugging you can expose raw_extraction, but keep it off by default
-            # "raw_extraction": result.get("raw_extraction"),
-        }), 200
+        # return jsonify({
+        #     "success": result.get("error") is None,
+        #     "data": {
+        #         "query": result.get("query"),
+        #         "organizer": result.get("organizer"),
+        #         "event_type": result.get("event_type"),
+        #         "attendees": result.get("attendees"),
+        #         "requirements": result.get("requirements", []),
+        #         "constraints": result.get("constraints", []),
+        #         "enriched_constraints": result.get("enriched_constraints", [])
+        #     },
+        #     "error": result.get("error"),
+        #     # For debugging you can expose raw_extraction, but keep it off by default
+        #     # "raw_extraction": result.get("raw_extraction"),
+        # }), 200
+        requirements = [req.lower() for req in result['requirements']]
+        attendees = result['attendees']
+        payload = build_reasoning_path_for_query(requirements,attendees=200, min_coverage=0.3, topk_for_context=5)
+        return payload, 200
 
     except Exception as e:
         return jsonify({"success": False, "error": f"Server error: {e}"}), 500
@@ -289,19 +301,22 @@ def extract_batch():
         results = []
         for q in queries:
             r = extract_event_intent(q, use_enrichment=use_enrichment)
-            results.append({
-                "query": r.get("query"),
-                "organizer": r.get("organizer"),
-                "event_type": r.get("event_type"),
-                "attendees": r.get("attendees"),
-                "requirements": r.get("requirements", []),
-                "constraints": r.get("constraints", []),
-                "enriched_constraints": r.get("enriched_constraints", []),
-                "error": r.get("error"),
-                "success": r.get("error") is None
-            })
+            # results.append({
+            #     "query": r.get("query"),
+            #     "organizer": r.get("organizer"),
+            #     "event_type": r.get("event_type"),
+            #     "attendees": r.get("attendees"),
+            #     "requirements": r.get("requirements", []),
+            #     "constraints": r.get("constraints", []),
+            #     "enriched_constraints": r.get("enriched_constraints", []),
+            #     "error": r.get("error"),
+            #     "success": r.get("error") is None
+            # })
+            requirements = [req.lower() for req in r['requirements']]
+            attendees = r['attendees']
+            payload = build_reasoning_path_for_query(requirements, attendees=200, min_coverage=0.6, topk_for_context=5)
 
-        return jsonify({"success": True, "results": results}), 200
+        return payload, 200
 
     except Exception as e:
         return jsonify({"success": False, "error": f"Server error: {e}"}), 500
