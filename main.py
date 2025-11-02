@@ -314,7 +314,7 @@ def extract_batch():
             # })
             requirements = [req.lower() for req in r['requirements']]
             attendees = r['attendees']
-            payload = build_reasoning_path_for_query(requirements, attendees=200, min_coverage=0.6, topk_for_context=5)
+            payload = build_reasoning_path_for_query(requirements, attendees=attendees, min_coverage=0.6, topk_for_context=5)
 
         return payload, 200
 
