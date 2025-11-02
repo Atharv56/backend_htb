@@ -272,7 +272,7 @@ def extract():
         # }), 200
         requirements = [req.lower() for req in result['requirements']]
         attendees = result['attendees']
-        payload = build_reasoning_path_for_query(requirements,attendees=200, min_coverage=0.3, topk_for_context=5)
+        payload = build_reasoning_path_for_query(requirements,attendees=attendees, min_coverage=0.3, topk_for_context=5)
         return payload, 200
 
     except Exception as e:
