@@ -433,10 +433,8 @@ def extract_batch():
 
 @app.route("/invite", methods=["POST"])
 def invite():
-    
     try:
         payload = request.get_json(force=True) or {}
-        return payload, 200
         event_info = payload.get("event_info") or {}
         tz_name = payload.get("timezone") or DEFAULT_TZ
         print(event_info)
