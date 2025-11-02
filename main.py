@@ -433,8 +433,10 @@ def extract_batch():
 
 @app.route("/invite", methods=["POST"])
 def invite():
+    
     try:
         payload = request.get_json(force=True) or {}
+        return payload, 200
         event_info = payload.get("event_info") or {}
         tz_name = payload.get("timezone") or DEFAULT_TZ
         print(event_info)
@@ -500,4 +502,4 @@ def invite():
 
 if __name__ == "__main__":
     # Run: (set env) GOOGLE_API_KEY=... SENDER_EMAIL=... SENDER_PASSWORD=... python app.py
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    app.run(host="0.0.0.0", port=8000, debug=True, )
